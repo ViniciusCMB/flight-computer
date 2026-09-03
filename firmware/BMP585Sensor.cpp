@@ -54,7 +54,7 @@ bool BMP585Sensor::begin() {
                             Adafruit_BMP280::SAMPLING_X2,
                             Adafruit_BMP280::SAMPLING_X16,
                             Adafruit_BMP280::FILTER_X16,
-                            Adafruit_BMP280::STANDBY_MS_1);  // fastest for 50 Hz loop
+                            Adafruit_BMP280::STANDBY_MS_1);  // fastest for 5 Hz loop
         _useBMP585 = false;
         found280 = true;
         Serial.println("BMP280 fallback active (backend=bmp280).");
@@ -187,7 +187,7 @@ bool BMP585Sensor::_firstReading() {
  * preserving the last known good values as fallback.
  * 
  * @return void
- * @note Called by FlightControlTask at 50Hz
+ * @note Called by FlightControlTask at 5Hz
  * @note Calls checkHighest() to update max altitude
  */
 void BMP585Sensor::update() {

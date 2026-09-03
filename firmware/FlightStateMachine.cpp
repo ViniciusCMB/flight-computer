@@ -91,7 +91,7 @@ void FlightStateMachine::reset() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main update — called at 50 Hz from FlightControlTask
+// Main update — called at 5 Hz from FlightControlTask
 // ─────────────────────────────────────────────────────────────────────────────
 
 void FlightStateMachine::update() {
@@ -155,7 +155,7 @@ void FlightStateMachine::update() {
       // apparent acceleration includes centripetal/pendulum terms and the
       // accelerometer may have bias (real flight: az at rest = +2.81 m/s²),
       // so filtered az can stay above -0.1 at the true apogee and the gate
-      // would lose it entirely. 50Hz quantization noise makes |vz| briefly
+      // would lose it entirely. Sampling quantization noise makes |vz| briefly
       // cross zero before the real apogee — benign: the deploy gate below
       // (vz < -2 m/s sustained) still only fires on the real descent.
       // Validated: extras/FSM_tester/validate_50hz_noise.py (0 premature

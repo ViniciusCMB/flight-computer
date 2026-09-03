@@ -4,7 +4,7 @@
  *
  * Consumes LogMessage entries from logQueue and prints them to Serial
  * with a timestamp and level filter. Runs at the lowest FreeRTOS priority
- * so it never delays FlightControlTask (50Hz, Core 1) or TelemetryTask
+ * so it never delays FlightControlTask (5Hz, Core 1) or TelemetryTask
  * (5Hz, Core 0) — it only runs when no higher-priority task is ready.
  *
  * Any task can call logMessage() to enqueue a message without blocking;

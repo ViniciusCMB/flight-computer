@@ -1,6 +1,6 @@
 /**
  * @file FlightControlTask.h
- * @brief FreeRTOS task that runs the flight FSM at 50Hz (Core 1)
+ * @brief FreeRTOS task that runs the flight FSM at 5Hz (Core 1)
  *
  * Owns the BMP585 barometer, LSM6DS3 IMU, FlightStateMachine and the
  * parachute release servo. Every 20ms it updates both sensors, advances
@@ -37,7 +37,7 @@
 constexpr uint32_t    FLIGHT_CONTROL_STACK_SIZE     = 4096;
 constexpr UBaseType_t FLIGHT_CONTROL_PRIORITY       = 20;
 constexpr BaseType_t  FLIGHT_CONTROL_CORE           = 1;
-constexpr TickType_t  FLIGHT_CONTROL_PERIOD_MS      = 20;  // 50Hz
+constexpr TickType_t  FLIGHT_CONTROL_PERIOD_MS      = 200;  // 5Hz (matches baro effective conversion rate; Thonyan 2026-09-03: 50Hz loop + 25Hz sensor = vz alternating 0/2x-real, no deploy)
 constexpr uint8_t     FLIGHT_CONTROL_WDT_TIMEOUT_S  = 5;
 constexpr UBaseType_t SENSOR_DATA_QUEUE_LEN         = 25;
 
@@ -58,7 +58,7 @@ extern QueueHandle_t sensorDataQueue;
 bool initFlightControlTask();
 
 /**
- * @brief Entrypoint FreeRTOS - loop de controle de voo a 50Hz
+ * @brief Entrypoint FreeRTOS - loop de controle de voo a 5Hz
  * @param pvParameters Nao utilizado
  */
 void taskFlightControl(void* pvParameters);

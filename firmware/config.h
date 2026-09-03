@@ -224,12 +224,12 @@ extern String file_dir;
 
 
 static constexpr float LIFTOFF_ACCEL_THRESHOLD  = 15.0f;  ///< m/s²  total accel
-static constexpr uint16_t LIFTOFF_CONFIRM_MS    = 100;    ///< ms  accel must stay above LIFTOFF_ACCEL_THRESHOLD (per-time confirmation; 5 cycles @50Hz — rejects bench/hand vibration spikes; burn sustains >15 m/s² for 1.2-19.6s in both missions)
-static constexpr uint16_t LIFTOFF_CONFIRM_MAX_GAP_MS = 60; ///< ms  max gap below threshold that does NOT reset the accumulator (tolerates single stale IMU frames)
+static constexpr uint16_t LIFTOFF_CONFIRM_MS    = 100;    ///< ms  accel must stay above LIFTOFF_ACCEL_THRESHOLD (per-time confirmation; 1 cycle @5Hz — rejects bench/hand vibration spikes; burn sustains >15 m/s² for 1.2-19.6s in both missions)
+static constexpr uint16_t LIFTOFF_CONFIRM_MAX_GAP_MS = 200; ///< ms  max gap below threshold that does NOT reset the accumulator (tolerates one 5Hz frame)
 static constexpr float LIFTOFF_MIN_HEIGHT       =  5.0f;  ///< m     height guard for liftoff
-static constexpr uint16_t LIFTOFF_ALT_CONFIRM_CYCLES = 3; ///< consecutive cycles above LIFTOFF_MIN_HEIGHT (60ms @50Hz — a bench pressure puff is 1-2 samples; a real ascent crosses 5m climbing)
+static constexpr uint16_t LIFTOFF_ALT_CONFIRM_CYCLES = 1; ///< consecutive cycles above LIFTOFF_MIN_HEIGHT (200ms @5Hz — a bench pressure puff is 1 sample; a real ascent crosses 5m climbing)
 static constexpr float BARO_MAX_ALT_RATE        = 200.0f; ///< m/s   |dAlt/dt| above this = sample is a pressure spike (hand shake / EMI), discarded; matches the Vz clip bound
-static constexpr uint16_t BARO_SPIKE_STREAK_RESEED = 3;    ///< consecutive rejected samples (60ms @50Hz) before re-seeding the reference — prevents the ratchet effect where one accepted glitch latches the altitude high forever (every return-to-zero then looks like a spike)
+static constexpr uint16_t BARO_SPIKE_STREAK_RESEED = 3;    ///< consecutive rejected samples (~600ms @5Hz) before re-seeding the reference — prevents the ratchet effect where one accepted glitch latches the altitude high forever (every return-to-zero then looks like a spike)
 static constexpr float BURNOUT_AZ_THRESHOLD     = -8.0f;  ///< m/s²  vertical accel
 static constexpr float BURNOUT_ACC_THRESHOLD    =  2.0f;  ///< m/s²  total accel
 static constexpr float BURNOUT_MIN_HEIGHT       =  5.0f;  ///< m     minimum altitude
@@ -256,7 +256,7 @@ static constexpr float FREEFALL_MAX_VZ          = -5.0f;  ///< m/s   vz must be 
 static constexpr float   FREEFALL_BACKSTOP_ACC_THRESHOLD = 3.0f;    ///< m/s²  near zero-g (≈0.3g)
 static constexpr float   FREEFALL_BACKSTOP_VZ            = -5.0f;   ///< m/s   must be descending this fast
 static constexpr float FREEFALL_BACKSTOP_MIN_HEIGHT   = 50.0f;  ///< m     ground guard (same as PARACHUTE_MIN_ALTITUDE)
-static constexpr uint16_t FREEFALL_BACKSTOP_CYCLES     = 50;     ///< ~1.0s at 50Hz (FLIGHT_CONTROL_PERIOD_MS=20ms)
+static constexpr uint16_t FREEFALL_BACKSTOP_CYCLES     = 5;      ///< ~1.0s @5Hz (FLIGHT_CONTROL_PERIOD_MS=200ms)
 
 // ── Barometer-staleness contingency (IMU-only, FSM-independent) ─────────────
 // If the barometer freezes mid-flight (I2C glitch, bad solder, EMI), both the
@@ -270,7 +270,7 @@ static constexpr uint16_t FREEFALL_BACKSTOP_CYCLES     = 50;     ///< ~1.0s at 5
 static constexpr uint32_t BARO_STALE_AGE_MS          = 2000;  ///< ms without a valid baro reading => frozen
 static constexpr float    BARO_STALE_ACC_THRESHOLD   = 3.0f;  ///< m/s²  near zero-g (same as backstop)
 static constexpr float    BARO_STALE_MIN_HEIGHT      = 50.0f; ///< m     ground guard via last-good maxAltitude
-static constexpr uint16_t BARO_STALE_SUSTAIN_CYCLES  = 125;   ///< 2.5s @ 50Hz (FLIGHT_CONTROL_PERIOD_MS=20ms)
+static constexpr uint16_t BARO_STALE_SUSTAIN_CYCLES  = 13;   ///< 2.6s @ 5Hz (FLIGHT_CONTROL_PERIOD_MS=200ms)
 
 // ── Pad arming (risk #2) ─────────────────────────────────────────────────────
 // Bench vibration (13_30_11: spikes 22-122 m/s²) can false-liftoff the FSM
@@ -281,10 +281,10 @@ static constexpr uint16_t BARO_STALE_SUSTAIN_CYCLES  = 125;   ///< 2.5s @ 50Hz (
 // when the relative altitude drifts below the threshold (1 hPa ~ 8.4 m).
 static constexpr float    ARM_MAX_ARM_ALTITUDE    = 10.0f;  ///< m   refuse ARM once the flight really started
 static constexpr float    ARM_REZERO_THRESHOLD    = -10.0f; ///< m   baro drift guard on the pad (relative alt)
-static constexpr uint16_t ARM_REZERO_SUSTAIN_CYCLES = 150;  ///< 3.0s @ 50Hz
+static constexpr uint16_t ARM_REZERO_SUSTAIN_CYCLES = 15;  ///< 3.0s @ 5Hz
 static constexpr float PARACHUTE_MIN_ALTITUDE    = 50.0f;  ///< m  minimum altitude (ground guard — never deploy below)
 static constexpr float PARACHUTE_CONFIRM_VZ      = -2.0f;  ///< m/s negative Vz required to confirm descent after apogee
-static constexpr uint8_t PARACHUTE_CONFIRM_CYCLES = 3;     ///< consecutive cycles of (vz < CONFIRM_VZ) before deploy
+static constexpr uint8_t PARACHUTE_CONFIRM_CYCLES = 3;     ///< consecutive cycles of (vz < CONFIRM_VZ) before deploy (600ms @5Hz)
 static constexpr float LANDED_MAX_VZ            =  0.5f;  ///< m/s   |vz| below this
 static constexpr float LANDED_MAX_HEIGHT        =  2.0f;  ///< m     altitude below this
 static constexpr float FILTER_ALPHA             =  0.2f;  ///< IIR low-pass coefficient
@@ -307,7 +307,15 @@ static constexpr float    STUCK_REST_MAX_ACC   = 15.0f;   ///< m/s² accel guard
 // reinit the sensor and re-capture the base pressure. IDLE only: in flight a
 // sustained altitude with low apparent accel can be real (coasting).
 static constexpr float    BARO_GLITCH_ALTITUDE       = 50.0f; ///< m   alt at rest above this on the pad = sensor fault
-static constexpr uint16_t BARO_GLITCH_SUSTAIN_CYCLES = 50;    ///< ~1.0s @ 50Hz sustained before reinit
+static constexpr uint16_t BARO_GLITCH_SUSTAIN_CYCLES = 5;    ///< ~1.0s @ 5Hz sustained before reinit
+
+// ── Sensor init retry (bench-validated recovery) ────────────────────────────
+// Bench observation: the LSM6DS3 / BMP585 sometimes fail begin() on first
+// power-up (I2C bus not settled yet) and succeed on a retry. Instead of
+// giving up after a single attempt, retry within a window; the buzzer beeps
+// each attempt so a pad-side operator can hear the recovery in progress.
+static constexpr uint32_t SENSOR_INIT_RETRY_WINDOW_MS  = 10000UL; ///< total retry window
+static constexpr uint32_t SENSOR_INIT_RETRY_PERIOD_MS  = 1000UL;  ///< between attempts
 
 // ── Baro base-pressure calibration (boot / reinit) ───────────────────────────
 // A single corrupted pressure sample at boot was observed to seed

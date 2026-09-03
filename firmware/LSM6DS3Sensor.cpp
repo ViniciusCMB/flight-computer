@@ -73,7 +73,7 @@ bool LSM6DS3Sensor::begin() {
  * Corrupted samples are silently dropped to prevent FSM errors.
  * 
  * @return void
- * @note Called by FlightControlTask at 50Hz
+ * @note Called by FlightControlTask at 5Hz
  * @note CRITICAL: Validates data before updating internal state
  */
 void LSM6DS3Sensor::update() {
