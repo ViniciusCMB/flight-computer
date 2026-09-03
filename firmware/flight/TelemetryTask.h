@@ -37,6 +37,9 @@ constexpr uint32_t    TELEMETRY_STACK_SIZE       = 4096;
 constexpr UBaseType_t TELEMETRY_PRIORITY         = 5;
 constexpr BaseType_t  TELEMETRY_CORE             = 0;
 constexpr TickType_t  TELEMETRY_PERIOD_MS        = 200;  // 5Hz
+// Jitter aleatorio (±ms) no periodo de TX — reduz colisao com o satellite
+// (#213) que transmite no mesmo canal/sync word a ~5Hz.
+constexpr TickType_t  TELEMETRY_JITTER_MS        = 40;
 constexpr TickType_t  TELEMETRY_QUEUE_TIMEOUT_MS = 50;   // bounded wait on sensorDataQueue
 
 // Handle da task (definido no .cpp)

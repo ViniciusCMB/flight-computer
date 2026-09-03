@@ -24,6 +24,7 @@
 #include "flight/LoggerTask.h"
 
 #include <SPI.h>
+#include <esp_system.h> // esp_random()
 
 TaskHandle_t g_telemetryTaskHandle = nullptr;
 
@@ -173,17 +174,22 @@ void taskTelemetry(void* pvParameters) {
 
   TickType_t lastWakeTime = xTaskGetTickCount();
   const TickType_t period = pdMS_TO_TICKS(TELEMETRY_PERIOD_MS);
+  const TickType_t jitterTicks = pdMS_TO_TICKS(TELEMETRY_JITTER_MS);
 
   SensorData data;
 
   for (;;) {
-    vTaskDelayUntil(&lastWakeTime, period);
+    // Jitter: desloca o proximo ciclo em ±TELEMETRY_JITTER_MS (RNG de
+    // hardware via esp_random) para reduzir colisao com o satellite #213.
+    const TickType_t jitter =
+        (TickType_t)(esp_random() % (2 * jitterTicks + 1)) - jitterTicks;
+    vTaskDelayUntil(&lastWakeTime, period + jitter);
 
     // 1) GPS (non-blocking NMEA feed)
     g_gps->update();
 
     // 2) Queue receive — bounded wait, never blocks indefinitely. FlightControl
-    //    produces samples ~10x faster than we consume them (50Hz vs 5Hz), so
+    //    produces samples at the same rate we consume them (5Hz vs 5Hz), so
     //    drain any backlog and keep only the freshest sample — otherwise the
     //    queue fills up and FlightControl silently drops every subsequent
     //    sample once it's full.
