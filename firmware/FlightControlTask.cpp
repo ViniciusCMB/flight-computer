@@ -1,6 +1,6 @@
 /**
  * @file FlightControlTask.cpp
- * @brief Implementation of the 50Hz flight control task
+ * @brief Implementation of the 5Hz flight control task
  *
  * @see FlightControlTask.h for API and configuration documentation
  * @see firmware/REFACTORING_PLAN.md - Fase 7
@@ -25,6 +25,38 @@ TaskHandle_t  g_flightControlTaskHandle = nullptr;
 QueueHandle_t sensorDataQueue           = nullptr;
 
 namespace {
+
+// ── Sensor init retry (single shared loop for IMU + baro) ────────────────────
+// Tries begin() on one sensor for up to SENSOR_INIT_RETRY_WINDOW_MS, beeping
+// the buzzer on every attempt (bench-validated: the LSM6DS3/BMP585 sometimes
+// only come up on a retry). Returns true on the first success.
+static bool beginSensorWithRetry(ISensor* sensor, const char* name) {
+  const uint32_t start = millis();
+  uint32_t attempt = 0;
+  for (;;) {
+    attempt++;
+    if (sensor->begin()) {
+      if (attempt > 1) {
+        Serial.printf("[FlightControl] %s init OK on attempt %lu\n",
+                      name, (unsigned long)attempt);
+        logMessage(TASK_ID_FLIGHT_CONTROL, LOG_LEVEL_WARN,
+                   "Sensor init recovered on retry");
+      }
+      return true;
+    }
+    if (millis() - start >= SENSOR_INIT_RETRY_WINDOW_MS) {
+      Serial.printf("[FlightControl] %s init failed after %lu attempts "
+                    "(retry window exhausted)\n",
+                    name, (unsigned long)attempt);
+      return false;
+    }
+    Serial.printf("[FlightControl] %s init failed, retrying in %lu ms...\n",
+                  name, (unsigned long)SENSOR_INIT_RETRY_PERIOD_MS);
+    // Audible tick per attempt (passive piezo -> square wave via tone()).
+    tone(BUZZER_PIN, BUZZER_TONE_HZ, 100);
+    vTaskDelay(pdMS_TO_TICKS(SENSOR_INIT_RETRY_PERIOD_MS));
+  }
+}
 
 BMP585Sensor*       g_baro = nullptr;
 LSM6DS3Sensor*       g_imu = nullptr;
@@ -349,12 +381,14 @@ bool initFlightControlTask() {
   // BMP280 fallback driver configures the bus (order validated 2026-08-27).
   // Distinguish which sensor failed so pad-side troubleshooting (buzzer
   // alarm is the only visible symptom) doesn't require re-flashed firmware.
-  if (!g_imu->begin()) {
+  // Each gets a 10 s retry window (bench: sometimes begin() only succeeds
+  // on a retry); the buzzer ticks once per failed attempt.
+  if (!beginSensorWithRetry(g_imu, "LSM6DS3 (IMU)")) {
     Serial.println("[FlightControl] FATAL: LSM6DS3 (IMU) init failed "
                    "(wiring/address? see config.h I2C_ADDR_LSM6DS3)");
     return false;
   }
-  if (!g_baro->begin()) {
+  if (!beginSensorWithRetry(g_baro, "BMP585/BMP280 (baro)")) {
     Serial.println("[FlightControl] FATAL: BMP585/BMP280 (baro) init failed "
                    "(wiring/address? see config.h I2C_ADDR_BMP585)");
     return false;

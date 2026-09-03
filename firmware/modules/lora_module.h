@@ -35,6 +35,21 @@
 #endif
 
 //==============================================================================
+// AVAILABILITY FLAG
+//==============================================================================
+
+// True only after setupLoRa() succeeded. Guards every transmission so
+// callers (telemetry, error logging) can send unconditionally without
+// touching an uninitialized radio.
+inline bool& loraAvailabilityRef() {
+  static bool loraAvailable = false;
+  return loraAvailable;
+}
+
+inline void markLoRaAvailable(bool available) { loraAvailabilityRef() = available; }
+inline bool isLoRaAvailable() { return loraAvailabilityRef(); }
+
+//==============================================================================
 // INITIALIZATION FUNCTIONS
 //==============================================================================
 
@@ -70,6 +85,7 @@ inline bool setupLoRa()
   if (!LoRa.begin(LORA_FREQ))
   {
     Serial.println("LoRa initialization failed.");
+    markLoRaAvailable(false);
     return false;
   }
   
@@ -86,6 +102,7 @@ inline bool setupLoRa()
   LoRa.setTxPower(LORA_TX_POWER);
   LoRa.enableCrc();
 
+  markLoRaAvailable(true);
   return true;
 }
 
@@ -112,6 +129,12 @@ inline bool setupLoRa()
  */
 inline void sendLoRa(const String &message)
 {
+  // No-op if the radio never initialized (setupLoRa() failed or was skipped)
+  if (!isLoRaAvailable())
+  {
+    return;
+  }
+
   // Start a new LoRa packet
   LoRa.beginPacket();
   

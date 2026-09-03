@@ -96,3 +96,6 @@ package-lock.json
 secrets.h
 credentials.h
 .opencode/
+
+# KiCad editor backups (kicad autosave plugin)
+hardware/**/.history/

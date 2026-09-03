@@ -10,6 +10,8 @@
 
 #include <cstring>
 
+#include "modules/lora_module.h"
+
 QueueHandle_t logQueue            = nullptr;
 TaskHandle_t  g_loggerTaskHandle  = nullptr;
 
@@ -62,6 +64,13 @@ void taskLogger(void* pvParameters) {
     Serial.printf("[%lu]%s[T%u] %s\n", log.timestamp,
                   getLogLevelName(log.level), log.taskId, log.message);
     g_stats.printedCount++;
+
+    // Forward errors over LoRa (same radio/frequency as telemetry) so the
+    // ground station sees them even without a serial link. Non-fatal if the
+    // radio is unavailable: sendLoRa() no-ops when LoRa was not initialized.
+    if (log.level == LOG_LEVEL_ERROR && isLoRaAvailable()) {
+      sendLoRa(String("ERR|") + log.timestamp + "|" + log.message);
+    }
   }
 }
 
