@@ -18,9 +18,12 @@
 #include "config.h"
 #include "modules/filesystem_module.h"
 #include "modules/lora_module.h"
+#include "modules/buzzer_module.h"
 #include "sensors/GPSModule.h"
 #include "flight/FlightControlTask.h"
 #include "flight/LoggerTask.h"
+
+#include <SPI.h>
 
 TaskHandle_t g_telemetryTaskHandle = nullptr;
 
@@ -97,9 +100,10 @@ String formatForSerial(const SensorData& data) {
   char buf[192];
   snprintf(buf, sizeof(buf),
            "[T+%lums #%u] %s | alt=%.1fm vz=%.2fm/s maxAlt=%.1fm | "
-           "acc=%.2fm/s2 | GPS: %s (%u sats) | chute=%s",
+           "p=%.1fhPa t=%.1fC acc=%.2fm/s2 | GPS: %s (%u sats) | chute=%s",
            data.timestamp, data.packet_count, getFlightStateName(data.state),
            data.altitude, data.verticalVelocity, data.maxAltitude,
+           data.pressure, data.temperature,
            data.totalAccel,
            data.gps_valid ? "fix" : "no fix", data.satellites,
            data.parachute_deployed ? "YES" : "no");
@@ -115,6 +119,12 @@ bool initTelemetryTask() {
         "initFlightControlTask() first");
     return false;
   }
+
+  // Remap the shared SPI bus (LoRa SCK=12/MISO=13/MOSI=11, CS=10) BEFORE
+  // setupStorage(): SD.begin uses the global SPI object, and without this
+  // remap the SD card is probed on the ESP32-S3 default SPI pins and always
+  // falls back to LittleFS. setupLoRa() re-issues SPI.begin() (idempotent).
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, SS_LORA);
 
   g_gps = new GPSModule(&Serial1);
   if (!g_gps->begin()) {
@@ -216,6 +226,21 @@ void taskTelemetry(void* pvParameters) {
     }
 
     g_stats.cycleCount++;
+
+    // Recovery beacon: 1 Hz short beep; LONG beep when LANDED (post-flight
+    // findability). Non-blocking tone(); millis()-paced so the 5 Hz loop is
+    // never delayed.
+    static uint32_t lastBeepMs = 0;
+    if (data.state == LANDED) {
+      // Always pace from the last beep in LANDED, even if the last one was short
+      if (millis() - lastBeepMs >= BUZZER_BEACON_PERIOD_MS) {
+        buzzRecoveryBeep(true);
+        lastBeepMs = millis();
+      }
+    } else if (millis() - lastBeepMs >= BUZZER_BEACON_PERIOD_MS) {
+      buzzRecoveryBeep(false);
+      lastBeepMs = millis();
+    }
   }
 }
 

@@ -59,7 +59,7 @@
 #define SERVO_PIN 7
 #define BUZZER_PIN 6
 const int SERVO_CLOSED = 50;  // door held closed (was 90; bench-set 2026-08-27)
-const int SERVO_EJECT = 135;  // parachute ejection position
+const int SERVO_EJECT = 160;  // parachute ejection position
 static const int GPS_BAUD = 9600;
 
 // ---- fixtures ---------------------------------------------------------------
@@ -303,7 +303,7 @@ void testFs() {
 // ------------------------------------------------------------------- servo
 void testServo() {
   header("SERVO (parachute ejection, GPIO7 — ACTUATOR WILL MOVE)");
-  Serial.println("  Angles: CLOSED=50 (held), EJECT=135 (parachute out)");
+  Serial.println("  Angles: CLOSED=50 (held), EJECT=180 (parachute out)");
   Serial.println("  WARNING: door will EJECT the parachute — clear the area!");
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
@@ -317,26 +317,47 @@ void testServo() {
   Serial.println("  start: CLOSED (50)...");
   benchServo.write(SERVO_CLOSED);
   delay(1500);  // generous settle so the horn definitely reaches 50
+  
+  // LOG DE VERIFICAÇÃO INICIAL
+  Serial.printf("  [Check] Posição inicial lida: %d\n", benchServo.read());
 
+  uint32_t lastMs[3] = {0,0,0};
+  
+  // Alterado para rep <= 3 para fazer sentido com o array de 3 posições (lastMs[3])
   for (int rep = 1; rep <= 3; rep++) {
-    Serial.printf("  rep %d: CLOSED (50) — ready\n", rep);
-    delay(1000);
-    Serial.printf("  rep %d: EJECT (135)!\n", rep);
+    Serial.printf("  rep %d: CLOSED (%d) — ready\n", rep, benchServo.read());
+    delay(500);
+    
+    Serial.printf("  rep %d: EJECT (180)!\n", rep);
     uint32_t t0 = millis();
     benchServo.write(SERVO_EJECT);
-    delay(1500);
-    Serial.printf("  rep %d: eject command round-trip %lu ms\n", rep, millis() - t0);
+    delay(1000);
+    uint32_t travel = millis() - t0;   // upper bound on real travel time
+    lastMs[rep - 1] = travel;
+    
+    // LOG DE VERIFICAÇÃO PÓS-EJEÇÃO
+    Serial.printf("  [Check] Posição pós-ejeção lida: %d\n", benchServo.read());
+    Serial.printf("  rep %d: travel 50->180 <= %lu ms\n", rep, travel);
+    
     Serial.printf("  rep %d: return CLOSED (50)\n", rep);
     benchServo.write(SERVO_CLOSED);
-    delay(1200);
+    delay(1000);
+    
+    // LOG DE VERIFICAÇÃO PÓS-RETORNO
+    Serial.printf("  [Check] Posição após retornar: %d\n", benchServo.read());
   }
+  
   benchServo.write(SERVO_CLOSED);
   delay(800);
   benchServo.detach();
+  
+  Serial.printf("  travel times (upper bound): %lu / %lu / %lu ms\n",
+                lastMs[0], lastMs[1], lastMs[2]);
   Serial.println("  3 ejection cycles done — visually confirm the chute ejected");
   Serial.println("  and the door re-seated closed each time.");
   Serial.println("  (mechanical verdict is manual; timing stats above)");
 }
+
 
 // ------------------------------------------------------------------ buzzer
 // Piezo is PASSIVE: it needs a square wave (~2-4 kHz), not DC. Driven via

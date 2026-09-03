@@ -33,13 +33,6 @@
  */
 
 //==============================================================================
-// LIBRARY INCLUDES
-//==============================================================================
-
-#include <Wire.h>    // I2C communication for BMP585 and LSM6DS3
-#include <SPI.h>     // SPI communication for LoRa module
-
-//==============================================================================
 // MODULE INCLUDES
 //==============================================================================
 
@@ -67,12 +60,12 @@
  * @brief Initialize all system components and prepare for flight
  * 
  * This function runs once at power-on and delegates subsystem startup to the
- * task init functions (each owns its objects, queues and watchdog):
- *  - initFlightControlTask(): BMP585 + LSM6DS3 + FSM + sensorDataQueue + servo
- *  - initTelemetryTask(): GPS + telemetry queue consumer + LoRa/file fan-out
+ * task init functions (each owns its objects, buses, queues and watchdog):
+ *  - initFlightControlTask(): Wire (I2C) + BMP585 + LSM6DS3 + FSM +
+ *    sensorDataQueue + servo
+ *  - initTelemetryTask(): SPI remap + GPS + telemetry queue consumer +
+ *    LoRa/file fan-out
  *  - initLoggerTask(): logQueue + Serial/file logger
- * 
- * On any critical init failure the system restarts (ESP.restart).
  * 
  * @note Serial monitor must be set to 115200 baud
  * @note The watchdog (TWDT) is armed inside taskFlightControl once it is
@@ -86,16 +79,14 @@
  */
 void setup() {
   Serial.begin(115200);
-  Wire.begin(I2C_SDA, I2C_SCL);
   pinMode(BUZZER_PIN, OUTPUT);
 
-  // Configure the SPI bus up front (LoRa pins SCK=12/MISO=13/MOSI=11, CS=10).
-  // initTelemetryTask() calls setupStorage() (SD.begin) BEFORE setupLoRa(),
-  // and SD.begin uses the global SPI object — without this early SPI.begin(),
-  // the SD card is probed on the ESP32-S3 default SPI pins and always falls
-  // back to LittleFS. setupLoRa() re-issues SPI.begin() with the same pins
-  // (idempotent).
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, SS_LORA);
+  // I2C/SPI bus init is owned by the subsystems that use it:
+  //   - Wire.begin()      -> initFlightControlTask() (BMP585 + LSM6DS3)
+  //   - SPI.begin() remap -> initTelemetryTask(), BEFORE setupStorage()
+  //     (SD.begin uses the global SPI object; without the pin remap the SD
+  //     card is probed on the ESP32-S3 default SPI pins and always falls
+  //     back to LittleFS. setupLoRa() re-issues SPI.begin() — idempotent.)
 
   bool initOk = true;
   String initFail = "";
@@ -119,8 +110,10 @@ void setup() {
     Serial.println("Halting — check wiring/sensors. Buzzer alarm active.");
     Serial.flush();
     for (;;) {
-      digitalWrite(BUZZER_PIN, (millis() / 500) % 2);
-      delay(500);
+      // Alarm tone at the piezo resonance — a passive piezo needs a square
+      // wave (digitalWrite DC is silent). Same frequency as the normal Beep.
+      tone(BUZZER_PIN, BUZZER_TONE_HZ, 400);
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
   }
 }

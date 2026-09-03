@@ -5,11 +5,41 @@ Run on the bench with the full stack wired as for flight.
 
 ## Flash & run
 
+**Board variant (2026-08-29):** this DevKit S3 has an external CH343 USB-serial
+bridge (QinHeng 1a86:55d3), NOT the native S3 USB-CDC. Therefore:
+
+- Do **NOT** use `CDCOnBoot=cdc` — it remaps `Serial` to the native USB-CDC
+  (GPIO19/20), which is not wired to this board's connector, and ALL app
+  prints disappear (only the ROM bootloader + system log remain visible).
+- Use `PSRAM=disabled` (module has no PSRAM chip) and `DebugLevel=none` to
+  keep the boot log clean.
+
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32s3 test/bench
-arduino-cli upload -p /dev/ttyACM0 --fqbn esp32:esp32:esp32s3 test/bench
+# Firmware
+~/bin/arduino-cli compile -b "esp32:esp32:esp32s3:PSRAM=disabled,DebugLevel=none" firmware/firmware.ino
+~/bin/arduino-cli upload -p /dev/ttyACM0 -b "esp32:esp32:esp32s3:PSRAM=disabled,DebugLevel=none" firmware/firmware.ino
+
+# Bench self-test
+~/bin/arduino-cli compile -b "esp32:esp32:esp32s3:PSRAM=disabled,DebugLevel=none" test/bench
+~/bin/arduino-cli upload -p /dev/ttyACM0 -b "esp32:esp32:esp32s3:PSRAM=disabled,DebugLevel=none" test/bench
+
 # Serial monitor at 115200
+~/bin/arduino-cli monitor -p /dev/ttyACM0 --config 115200
 ```
+
+Bench tips (learned the hard way):
+
+- **Close any serial monitor before uploading** — the port is exclusive
+  (`Errno 11 Could not exclusively lock port` otherwise).
+- Upload does NOT erase NVS — a stale FSM snapshot survives re-flash and the
+  FSM boots straight into ASCENT/DESCENT. For a clean start:
+  ```bash
+  ~/.arduino15/packages/esp32/tools/esptool_py/5.3.0/esptool \
+    --chip esp32s3 --port /dev/ttyACM0 --baud 921600 erase-flash
+  ```
+  (Full-flight procedure never erases — use the `ARM` serial command instead.)
+- If upload fails with `No serial data received`: hold BOOT, pulse EN, release
+  BOOT, run the upload immediately.
 
 ## Commands
 

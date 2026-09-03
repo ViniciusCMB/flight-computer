@@ -123,8 +123,8 @@ static constexpr uint8_t FLUSH_EVERY_N = 10;
  * I2C data pin (SDA) for the sensor bus.
  * @note ESP32-S3 Arduino core default is SDA=8 / SCL=9. The BMP585 and
  *       LSM6DS3 drivers call begin_I2C() with no pins, so they use this
- *       default. Wire.begin() below also uses these. Keep the schematic
- *       wired to 8/9 (or change both here and the calls).
+ *       default. Wire.begin() in initFlightControlTask() also uses these.
+ *       Keep the schematic wired to 8/9 (or change both here and the calls).
  */
 #define I2C_SDA 8
 
@@ -142,10 +142,13 @@ static constexpr uint8_t FLUSH_EVERY_N = 10;
 
 /**
  * I2C 7-bit address of the BMP585 barometer.
- * Bench-measured via brute-force I2C scan (2026-08-27): responds at 0x7E
- * (non-default; the BMP58x factory default is 0x76/0x77 selected by CSB).
+ * 0x46 is the BMP58x factory default (CSB tied low selects 0x47).
+ * The earlier 0x7E here was a ghost ACK from the brute-force scan
+ * (ACK present but CHIP_ID=0x50 never validated — 2026-08-27 bench).
  */
-#define I2C_ADDR_BMP585 0x7E
+#define I2C_ADDR_BMP585 0x46
+/** Alternate BMP58x address when the CSB pin is strapped high. */
+#define I2C_ADDR_BMP585_ALT 0x47
 
 /**
  * BMP280 fallback addresses (strap-selected: SDO low = 0x76, high = 0x77).
@@ -200,7 +203,7 @@ const int SERVO_CLOSED = 50;
  * Used as prefix in all telemetry transmissions
  * Allows identifying data from different teams
  */
-constexpr const char* TEAM_ID = "#100";
+constexpr const char* TEAM_ID = "#51";
 
 //==============================================================================
 // FILESYSTEM CONFIGURATION
@@ -221,6 +224,12 @@ extern String file_dir;
 
 
 static constexpr float LIFTOFF_ACCEL_THRESHOLD  = 15.0f;  ///< m/s²  total accel
+static constexpr uint16_t LIFTOFF_CONFIRM_MS    = 100;    ///< ms  accel must stay above LIFTOFF_ACCEL_THRESHOLD (per-time confirmation; 5 cycles @50Hz — rejects bench/hand vibration spikes; burn sustains >15 m/s² for 1.2-19.6s in both missions)
+static constexpr uint16_t LIFTOFF_CONFIRM_MAX_GAP_MS = 60; ///< ms  max gap below threshold that does NOT reset the accumulator (tolerates single stale IMU frames)
+static constexpr float LIFTOFF_MIN_HEIGHT       =  5.0f;  ///< m     height guard for liftoff
+static constexpr uint16_t LIFTOFF_ALT_CONFIRM_CYCLES = 3; ///< consecutive cycles above LIFTOFF_MIN_HEIGHT (60ms @50Hz — a bench pressure puff is 1-2 samples; a real ascent crosses 5m climbing)
+static constexpr float BARO_MAX_ALT_RATE        = 200.0f; ///< m/s   |dAlt/dt| above this = sample is a pressure spike (hand shake / EMI), discarded; matches the Vz clip bound
+static constexpr uint16_t BARO_SPIKE_STREAK_RESEED = 3;    ///< consecutive rejected samples (60ms @50Hz) before re-seeding the reference — prevents the ratchet effect where one accepted glitch latches the altitude high forever (every return-to-zero then looks like a spike)
 static constexpr float BURNOUT_AZ_THRESHOLD     = -8.0f;  ///< m/s²  vertical accel
 static constexpr float BURNOUT_ACC_THRESHOLD    =  2.0f;  ///< m/s²  total accel
 static constexpr float BURNOUT_MIN_HEIGHT       =  5.0f;  ///< m     minimum altitude
@@ -279,5 +288,35 @@ static constexpr uint8_t PARACHUTE_CONFIRM_CYCLES = 3;     ///< consecutive cycl
 static constexpr float LANDED_MAX_VZ            =  0.5f;  ///< m/s   |vz| below this
 static constexpr float LANDED_MAX_HEIGHT        =  2.0f;  ///< m     altitude below this
 static constexpr float FILTER_ALPHA             =  0.2f;  ///< IIR low-pass coefficient
+
+// ── Stuck-state backstop (time-in-state) ─────────────────────────────────────
+// DESCENT never confirming LANDED (baro drift keeps height above the ground
+// guard, or vz noise) would hang the FSM forever. After the timeout at rest
+// (no thrust, no vertical motion), force LANDED — the parachute decision was
+// already made, so there is no safety loss. LANDED itself remains terminal
+// until a reboot or an explicit reset().
+static constexpr uint32_t DESCENT_TIMEOUT_MS   = 120000UL; ///< 2 min in DESCENT -> force LANDED
+static constexpr float    STUCK_REST_MAX_VZ    = 1.0f;    ///< m/s  |vz| guard for the backstop
+static constexpr float    STUCK_REST_MAX_ACC   = 15.0f;   ///< m/s² accel guard (no motor/thrust active)
+
+// ── Baro glitch recovery (IDLE only) ─────────────────────────────────────────
+// Bench observation: the BMP585 can lose its configuration (suspected chip
+// reset from a supply glitch, e.g. LoRa TX burst) and afterwards read a
+// SELF-CONSISTENT but wrong pressure — alt jumps to ~2400 m on the table with
+// vz ~ 0. On the pad at rest that is impossible, so after the sustain window
+// reinit the sensor and re-capture the base pressure. IDLE only: in flight a
+// sustained altitude with low apparent accel can be real (coasting).
+static constexpr float    BARO_GLITCH_ALTITUDE       = 50.0f; ///< m   alt at rest above this on the pad = sensor fault
+static constexpr uint16_t BARO_GLITCH_SUSTAIN_CYCLES = 50;    ///< ~1.0s @ 50Hz sustained before reinit
+
+// ── Baro base-pressure calibration (boot / reinit) ───────────────────────────
+// A single corrupted pressure sample at boot was observed to seed
+// base_pressure ~1305 hPa (real pad pressure ~1013 hPa), making the altitude
+// read ~+2400 m permanently. The median of N range-validated samples is
+// immune to isolated corruption.
+static constexpr uint8_t  FIRST_READ_SAMPLES          = 9;   ///< samples taken for the median
+static constexpr uint8_t  FIRST_READ_MIN_VALID        = 5;   ///< fewer valid samples => calibration fails
+static constexpr uint8_t  FIRST_READ_MAX_ATTEMPTS     = 30;  ///< total read attempts before giving up
+static constexpr uint16_t FIRST_READ_SAMPLE_PERIOD_MS = 20;  ///< between calibration samples
 
 #endif // CONFIG_H

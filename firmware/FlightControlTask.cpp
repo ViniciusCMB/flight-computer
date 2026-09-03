@@ -12,6 +12,7 @@
 #include <esp_timer.h>
 #include <ESP32Servo.h>
 #include <string.h>
+#include <Wire.h>
 
 #include "config.h"
 #include "sensors/BMP585Sensor.h"
@@ -237,6 +238,38 @@ static void handleArmCommand() {
   }
 }
 
+// ── Baro glitch recovery (IDLE only) ─────────────────────────────────────────
+// On the bench the BMP585 was observed to lose calibration (suspected chip
+// reset from a supply glitch) and read a self-consistent but wrong pressure:
+// alt jumped to ~2400 m while vz stayed ~0. On the pad (IDLE + at rest) that
+// is unambiguously a sensor fault, never a real flight — a real liftoff has
+// acc > LIFTOFF_ACCEL_THRESHOLD. Sustained impossible altitude at rest =>
+// full sensor reinit + re-zero of the pad reference.
+static void checkBaroGlitch() {
+  static uint16_t glitchCycles = 0;
+  const bool atRest = g_baro->getVerticalVelocity() > -STUCK_REST_MAX_VZ &&
+                      g_baro->getVerticalVelocity() < STUCK_REST_MAX_VZ &&
+                      g_imu->getTotalAccel() < STUCK_REST_MAX_ACC;
+  if (g_fsm->getState() != IDLE || g_parachuteActuated || !atRest) {
+    glitchCycles = 0;
+    return;
+  }
+  if (fabsf(g_baro->getAltitude()) > BARO_GLITCH_ALTITUDE) {
+    if (++glitchCycles >= BARO_GLITCH_SUSTAIN_CYCLES) {
+      Serial.println("[FlightControl] Baro glitch on pad (alt at rest "
+                     "impossible) — reinitializing sensor");
+      logMessage(TASK_ID_FLIGHT_CONTROL, LOG_LEVEL_WARN,
+                 "Baro glitch recovery (reinit)");
+      if (g_baro->reinit()) {
+        g_baro->setMaxAltitude(0.0f);
+      }
+      glitchCycles = 0;
+    }
+  } else {
+    glitchCycles = 0;
+  }
+}
+
 // Complement to ARM: while the FSM sits on the pad in IDLE, a baro pressure
 // drift pulls the relative altitude negative. After ARM_REZERO_SUSTAIN_CYCLES
 // of sustained drift below ARM_REZERO_THRESHOLD, re-capture base_pressure and
@@ -306,13 +339,24 @@ void deployParachute() {
 }  // namespace
 
 bool initFlightControlTask() {
+  // I2C bus init is owned here (sensor bus user). See firmware.ino setup().
+  Wire.begin(I2C_SDA, I2C_SCL);
+
   g_baro = new BMP585Sensor();
   g_imu  = new LSM6DS3Sensor();
 
   // IMU first: bench bring-up showed the LSM6DS3 must init before the
   // BMP280 fallback driver configures the bus (order validated 2026-08-27).
-  if (!g_imu->begin() || !g_baro->begin()) {
-    Serial.println("[FlightControl] FATAL: sensor initialization failed");
+  // Distinguish which sensor failed so pad-side troubleshooting (buzzer
+  // alarm is the only visible symptom) doesn't require re-flashed firmware.
+  if (!g_imu->begin()) {
+    Serial.println("[FlightControl] FATAL: LSM6DS3 (IMU) init failed "
+                   "(wiring/address? see config.h I2C_ADDR_LSM6DS3)");
+    return false;
+  }
+  if (!g_baro->begin()) {
+    Serial.println("[FlightControl] FATAL: BMP585/BMP280 (baro) init failed "
+                   "(wiring/address? see config.h I2C_ADDR_BMP585)");
     return false;
   }
 
@@ -364,7 +408,15 @@ void taskFlightControl(void* pvParameters) {
       .idle_core_mask = 0,
       .trigger_panic = true
   };
-  if (esp_task_wdt_init(&twdt_config) != ESP_OK) {
+  // ESP_ERR_INVALID_STATE is OK here: the IDF already arms the TWDT at boot
+  // (CONFIG_ESP_TASK_WDT_INIT). Only treat unexpected failures as errors.
+  esp_err_t wdt_err = esp_task_wdt_init(&twdt_config);
+  if (wdt_err == ESP_ERR_INVALID_STATE) {
+    // Already armed by the IDF at boot (CONFIG_ESP_TASK_WDT_INIT) with its
+    // own default timeout — apply ours instead of silently keeping theirs.
+    wdt_err = esp_task_wdt_reconfigure(&twdt_config);
+  }
+  if (wdt_err != ESP_OK) {
     Serial.println("[FlightControl] ERROR: watchdog init failed");
     logMessage(TASK_ID_FLIGHT_CONTROL, LOG_LEVEL_ERROR, "Watchdog init failed");
   }
@@ -390,6 +442,7 @@ void taskFlightControl(void* pvParameters) {
     // 1b) Pad arming (risk #2): ARM via Serial + auto re-zero do barometro
     handleArmCommand();
     checkAutoRezero();
+    checkBaroGlitch();
 
     // 2) FSM
     g_fsm->update();

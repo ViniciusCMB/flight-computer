@@ -12,6 +12,7 @@
 BMP585Sensor::BMP585Sensor()
     : _ready(false), _useBMP585(true), _basePressure(0.0F), _altitude(0.0F), _temperature(0.0F),
       _pressure(0.0F), _maxAltitude(0.0F), _prevAltitude(0.0F), _prevTime(0UL),
+      _spikeStreak(0),
       _verticalVelocity(0.0F) {}
 
 /**
@@ -24,10 +25,25 @@ BMP585Sensor::BMP585Sensor()
  * @note Blocking: performs one sensor reading during calibration
  */
 bool BMP585Sensor::begin() {
-  // Primary: BMP585 at the bench-measured address
-  if (_bmp.begin(I2C_ADDR_BMP585, &Wire)) {
+  // Primary: BMP585 at the factory-default address (0x46; CSB strap = 0x47).
+  // Post-begin config mirrors the working satellite implementation
+  // (satellite/src/sensors/BME280Sensor.cpp) — without setPowerMode(NORMAL)
+  // the chip stays in standby and performReading() can fail.
+  bool found585 = false;
+  for (uint8_t a : {I2C_ADDR_BMP585, I2C_ADDR_BMP585_ALT}) {
+    if (!_bmp.begin(a, &Wire)) {
+      continue;
+    }
+    _bmp.setTemperatureOversampling(BMP5XX_OVERSAMPLING_8X);
+    _bmp.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
+    _bmp.setIIRFilterCoeff(BMP5XX_IIR_FILTER_COEFF_3);
+    _bmp.setOutputDataRate(BMP5XX_ODR_25_HZ);
+    _bmp.setPowerMode(BMP5XX_POWERMODE_NORMAL);
     _useBMP585 = true;
-  } else {
+    found585 = true;
+    break;
+  }
+  if (!found585) {
     // Fallback: BMP280 (satellite BME280Sensor.cpp pattern) — try both
     // strap-selected addresses. Sampling mirrors the satellite config.
     Serial.println("BMP585 not found, trying BMP280 fallback...");
@@ -62,6 +78,18 @@ bool BMP585Sensor::begin() {
   return true;
 }
 
+bool BMP585Sensor::reinit() {
+  Serial.println("[BMP585] reinit: sensor glitch recovery");
+  _ready = false;
+  if (!begin()) {
+    Serial.println("[BMP585] reinit FAILED");
+    return false;
+  }
+  Serial.printf("[BMP585] reinit OK: p=%.2f hPa t=%.1f C\n",
+                _pressure, _temperature);
+  return true;
+}
+
 /**
  * @brief Take the first (blocking) reading and seed the state
  *
@@ -69,29 +97,84 @@ bool BMP585Sensor::begin() {
  * pressure/temperature/altitude, calibrates base pressure, and resets
  * the Vz derivative state.
  *
+ * Base pressure calibration is median-filtered and range-validated: a
+ * single corrupted sample at boot (I2C glitch, sensor mid-reset during
+ * power-up) was observed to seed base_pressure ~1305 hPa, which made the
+ * altitude read ~+2400 m on the pad permanently. The median of N valid
+ * samples is immune to isolated corruption.
+ *
  * @return true if the reading was valid
  */
 bool BMP585Sensor::_firstReading() {
+  float rawPressure = 0.0F;
+  float rawTemp = 0.0F;
+
   if (_useBMP585) {
     if (!_bmp.performReading()) {
       return false;
     }
-    _pressure = _bmp.pressure / 100.0F;
-    _temperature = _bmp.temperature;
-    _altitude = _bmp.readAltitude(_basePressure);
+    // NOTE: performReading() already converts Pa -> hPa internally.
+    // Do NOT divide by 100 again (double conversion caused alt=-62157m).
+    rawPressure = _bmp.pressure;
+    rawTemp = _bmp.temperature;
   } else {
-    _pressure = _bmp280.readPressure() / 100.0F;
-    _temperature = _bmp280.readTemperature();
+    rawPressure = _bmp280.readPressure() / 100.0F;
+    rawTemp = _bmp280.readTemperature();
   }
 
-  _basePressure = _pressure;
+  // ── Median-filtered base pressure calibration ─────────────────────────────
+  // Reject samples outside the physically plausible atmosphere (300 hPa ~
+  // 9000 m; 1100 hPa ~ -900 m — the analog of the setBasePressure guard).
+  // Up to N attempts; require at least MIN_VALID to accept.
+  float samples[FIRST_READ_SAMPLES];
+  uint8_t valid = 0;
+  for (uint8_t attempt = 0;
+       attempt < FIRST_READ_MAX_ATTEMPTS && valid < FIRST_READ_SAMPLES;
+       attempt++) {
+    if (rawPressure > 300.0F && rawPressure < 1100.0F) {
+      samples[valid++] = rawPressure;
+    }
+    delay(FIRST_READ_SAMPLE_PERIOD_MS);
+    if (_useBMP585) {
+      if (!_bmp.performReading()) continue;
+      rawPressure = _bmp.pressure;
+      rawTemp = _bmp.temperature;
+    } else {
+      rawPressure = _bmp280.readPressure() / 100.0F;
+      rawTemp = _bmp280.readTemperature();
+    }
+  }
+
+  if (valid < FIRST_READ_MIN_VALID) {
+    Serial.printf("[BMP585] Calibration failed: only %u valid pressure "
+                  "samples\n", valid);
+    return false;
+  }
+
+  // Insertion sort (N <= 9, trivial cost) and take the median
+  for (uint8_t i = 1; i < valid; i++) {
+    const float key = samples[i];
+    int8_t j = i - 1;
+    while (j >= 0 && samples[j] > key) {
+      samples[j + 1] = samples[j];
+      j--;
+    }
+    samples[j + 1] = key;
+  }
+  _basePressure = samples[valid / 2];
+  _pressure = rawPressure;
+  _temperature = rawTemp;
   _altitude = _useBMP585 ? _bmp.readAltitude(_basePressure)
                          : _bmp280.readAltitude(_basePressure);
+
+  Serial.printf("[BMP585] Base pressure: %.2f hPa (%u/%u valid samples)\n",
+                _basePressure, valid, FIRST_READ_SAMPLES);
 
   _prevAltitude = _altitude;
   _maxAltitude = _altitude;
   _prevTime = millis();
   _verticalVelocity = 0.0F;
+  _spikeStreak = 0;
   return !isnan(_altitude) && !isnan(_pressure);
 }
 
@@ -119,7 +202,8 @@ void BMP585Sensor::update() {
     if (!_bmp.performReading()) {
       return;
     }
-    _pressure = _bmp.pressure / 100.0F;
+    // performReading() already returns hPa (Pa->hPa done internally)
+    _pressure = _bmp.pressure;
     _temperature = _bmp.temperature;
     current_altitude = _bmp.readAltitude(_basePressure);
   } else {
@@ -134,8 +218,40 @@ void BMP585Sensor::update() {
     return;
   }
 
-  _pressure = _bmp.pressure / 100.0F;
-  _temperature = _bmp.temperature;
+  // Pressure-spike rejection: moving the board through the air (bench shake,
+  // EMI) causes momentary pressure puffs that read as tens of meters of
+  // altitude change between consecutive samples — an implied climb rate no
+  // real flight produces. Discard the sample and keep the last good state
+  // (altitude, Vz and maxAltitude are all protected).
+  //
+  // Ratchet escape: a single ACCEPTED glitch latches _prevAltitude high, and
+  // from then on every legitimate return-to-zero reading looks like a spike
+  // (a -15 m step is 750 m/s) — the altitude would never come back down.
+  // After BARO_SPIKE_STREAK_RESEED consecutive rejections the reference is
+  // re-seeded: either the sensor reference is corrupt (sustained glitch ->
+  // checkBaroGlitch then reinits on the pad) or the flight genuinely exceeds
+  // BARO_MAX_ALT_RATE (in which case tracking reality is the right choice).
+  if (_prevTime != 0UL && current_time > _prevTime) {
+    const float spikeRate =
+        fabsf(current_altitude - _prevAltitude) * 1000.0F /
+        static_cast<float>(current_time - _prevTime);
+    if (spikeRate > BARO_MAX_ALT_RATE) {
+      if (++_spikeStreak >= BARO_SPIKE_STREAK_RESEED) {
+        _spikeStreak = 0;
+        _altitude = current_altitude;
+        _prevAltitude = current_altitude;
+        _prevTime = current_time;
+        _verticalVelocity = 0.0F;
+        checkHighest();
+        Serial.printf("[BMP585] Spike streak (%u samples) — reference "
+                      "re-seeded to %.1f m\n", BARO_SPIKE_STREAK_RESEED,
+                      current_altitude);
+      }
+      return;
+    }
+  }
+  _spikeStreak = 0;
+
   _altitude = current_altitude;
 
   const float dt = (current_time - _prevTime) / 1000.0F;
@@ -197,6 +313,7 @@ void BMP585Sensor::setBasePressure(float basePressure) {
   // Reset derivative state so the first Vz after restore is a real reading
   _prevAltitude = _altitude;
   _prevTime = millis();
+  _spikeStreak = 0;
 }
 
 void BMP585Sensor::setMaxAltitude(float maxAltitude) {

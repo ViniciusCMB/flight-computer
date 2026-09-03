@@ -86,4 +86,26 @@ inline void buzzSignal(String signal)
   }
 }
 
+//==============================================================================
+// RECOVERY BEACON (non-blocking, driven by TelemetryTask at 5 Hz)
+//==============================================================================
+
+// Beacon cadence: short beep every 1 s in flight/idle; LONG beep every 1 s
+// once LANDED so the rocket is findable in tall grass after touchdown.
+constexpr uint32_t BUZZER_BEACON_PERIOD_MS = 1000;  // 1 Hz
+constexpr uint32_t BUZZER_BEACON_SHORT_MS  = 50;
+constexpr uint32_t BUZZER_BEACON_LANDED_MS = 500;
+
+/**
+ * @brief Emit one recovery-beacon tone (non-blocking tone())
+ * @param landed true -> long tone (500 ms); false -> short beep (50 ms)
+ * @note Uses tone() WITHOUT delay(): safe to call from a FreeRTOS task.
+ *       Caller owns the 1 Hz pacing (millis()-based).
+ */
+inline void buzzRecoveryBeep(bool landed)
+{
+  tone(BUZZER_PIN, BUZZER_TONE_HZ,
+       landed ? BUZZER_BEACON_LANDED_MS : BUZZER_BEACON_SHORT_MS);
+}
+
 #endif // BUZZER_MODULE_H

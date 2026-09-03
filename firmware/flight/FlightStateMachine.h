@@ -84,6 +84,7 @@ public:
 
   FlightState getState() const;
   const char* getStateName() const;
+  uint32_t getTimeInStateMs() const { return millis() - _stateEntryMs; }
 
   // Sub-event flags (set once, never cleared until reset)
   bool isLiftoffDetected() const;
@@ -146,6 +147,21 @@ private:
   float    _filtAz;
   bool     _firstReading;
 
+  // Liftoff per-time confirmation (risk: bench/hand vibration spikes cause
+  // false liftoff at 1 cycle). Accel must stay above LIFTOFF_ACCEL_THRESHOLD
+  // for LIFTOFF_CONFIRM_MS; short gaps below (<= LIFTOFF_CONFIRM_MAX_GAP_MS,
+  // e.g. a stale IMU frame) do not reset the accumulator.
+  bool     _liftoffAccelAbove;   // whether previous cycle was above threshold
+  uint32_t _liftoffAccelStartMs; // millis() when the current above-threshold run started
+
+  // Sustained-altitude guard for liftoff: a bench pressure puff spikes the
+  // baro altitude above LIFTOFF_MIN_HEIGHT for 1-2 samples; a real ascent
+  // stays above it. Require LIFTOFF_ALT_CONFIRM_CYCLES consecutive cycles.
+  uint16_t _altAboveCount;
+
+  // Time-in-state backstops (stuck-state recovery)
+  uint32_t _stateEntryMs;        // millis() when the current state was entered
+
   // ── NVS persistence (watchdog-reboot recovery) ──────────────────────────
   // Fixed-layout POD; read/written as an opaque blob via Preferences.
   // magic/version guard against stale or ABI-changed snapshots.
@@ -176,6 +192,8 @@ private:
 
   // Detection helpers — exact port from test/FSM/FSM.ino
   bool detectLiftoff(float ax, float ay, float az) const;
+  // Per-time confirmation wrapper (see .cpp; needs mutable confirmation state)
+  bool detectLiftoffTimed(float ax, float ay, float az);
   bool detectBurnout(float ax, float ay, float az, float height, float vz) const;
   bool detectApogee(float vz) const;
   bool detectFreefall(float vz, float height, float totalAcc) const;

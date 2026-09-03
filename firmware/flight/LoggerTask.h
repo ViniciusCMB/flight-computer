@@ -34,7 +34,9 @@
 // TASK CONFIGURATION (AGENTS.md - FreeRTOS Guidelines)
 //==============================================================================
 
-constexpr uint32_t    LOGGER_STACK_SIZE = 2048;
+// 4096 bytes: Serial.printf (IDF printf + float formatting + UART driver)
+// peaks at ~2 KB; 2048 tripped the stack canary in flight (A15=0xcdcd).
+constexpr uint32_t    LOGGER_STACK_SIZE = 4096;
 constexpr UBaseType_t LOGGER_PRIORITY   = 1;
 constexpr BaseType_t  LOGGER_CORE       = 0;
 constexpr UBaseType_t LOG_QUEUE_LEN     = 50;

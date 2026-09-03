@@ -40,7 +40,8 @@ inline StorageType g_storage_type = STORAGE_NONE;
  *
  * Tenta SD primeiro, se falhar usa LittleFS (internal flash).
  * Requer que o barramento SPI ja tenha sido configurado com os pinos do
- * LoRa (LORA_SCK/MISO/MOSI) — firmware.ino chama SPI.begin() no setup() —
+ * LoRa (LORA_SCK/MISO/MOSI) — initTelemetryTask() chama SPI.begin() antes
+ * de setupStorage()
  * pois SD.begin() usa o objeto SPI global. Sem isso, o SD e' procurado nos
  * pinos SPI default do ESP32-S3 e cai sempre no LittleFS.
  *

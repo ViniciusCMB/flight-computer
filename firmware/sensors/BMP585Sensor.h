@@ -42,6 +42,20 @@ public:
   float getMaxAltitude() const;
   float getVerticalVelocity() const;
 
+  /**
+   * @brief Full re-initialization and re-calibration (glitch recovery)
+   *
+   * Re-runs the begin() sequence. Recovers the sensor after an I2C bus
+   * corruption or a chip reset (e.g. brownout during a LoRa TX burst) that
+   * leaves the BMP585 self-consistent but reading a wrong pressure (observed
+   * on the bench: sustained ~-26% pressure offset => alt jumps to ~2400 m
+   * while vz stays ~0). Re-captures base pressure from the fresh reading.
+   *
+   * @return true if re-initialization succeeded
+   * @warning Only call while the FSM is IDLE and the rocket is at rest
+   */
+  bool reinit();
+
   /** @brief true if the primary BMP585 backend is active (not the BMP280 fallback) */
   bool useBMP585() const { return _useBMP585; }
 
@@ -95,6 +109,7 @@ private:
   float _prevAltitude;
   unsigned long _prevTime;
   float _verticalVelocity;
+  uint16_t _spikeStreak;  // consecutive spike-rejected samples (ratchet escape)
 };
 
 #endif // BMP585_SENSOR_H
