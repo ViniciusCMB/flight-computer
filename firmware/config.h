@@ -97,7 +97,7 @@ static constexpr uint8_t FLUSH_EVERY_N = 10;
  * @note Two servo footprints (M1, M2) on the schematic share this same PWM
  *       signal — confirm with the assembler whether the build uses one or both.
  */
-#define SERVO_PIN 7
+#define SERVO_PIN 39
 
 /**
  * Digital pin connected to piezoelectric buzzer.
@@ -203,7 +203,7 @@ const int SERVO_CLOSED = 50;
  * Used as prefix in all telemetry transmissions
  * Allows identifying data from different teams
  */
-constexpr const char* TEAM_ID = "#51";
+constexpr const char* TEAM_ID = "#11";
 
 //==============================================================================
 // FILESYSTEM CONFIGURATION

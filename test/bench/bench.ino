@@ -56,7 +56,7 @@
 #define SD_CS_PIN 14
 #define RX_GPS 17  // bench-measured: GPS TX physically on GPIO17 (mirror of config.h 2026-08-27)
 #define TX_GPS 18
-#define SERVO_PIN 7
+#define SERVO_PIN 39
 #define BUZZER_PIN 6
 const int SERVO_CLOSED = 50;  // door held closed (was 90; bench-set 2026-08-27)
 const int SERVO_EJECT = 160;  // parachute ejection position
