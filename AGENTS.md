@@ -7,7 +7,7 @@ This guide is for AI coding agents working on the Flight Computer project (#11 -
 - **Hardware**: ESP32-S3 (primary), ESP32-C3 SuperMini (legacy)
 - **Language**: C/C++ (Arduino framework)
 - **Architecture**: v2.0 (OOP + FreeRTOS + FSM - implemented), v1.0 (procedural, EOL)
-- **Key Docs**: `firmware/REFACTORING_PLAN.md`, `CONTRIBUTING.md`, `docs/software.md`
+|- **Key Docs**: `docs/architecture.md`, `docs/modules.md`, `docs/software.md`, `docs/hardware.md`, `CONTRIBUTING.md`
 
 ---
 
@@ -247,7 +247,7 @@ float calculate(float a, float b, float c);
 ## Development Workflow
 
 ### Before Implementing
-1. Read `firmware/REFACTORING_PLAN.md` for v2.0 architecture
+1. Read `docs/architecture.md` for v2.0 architecture
 2. Check `CONTRIBUTING.md` for project guidelines
 3. Review existing similar code in `firmware/` modules
 
@@ -288,7 +288,7 @@ if (data.parachute_deployed &&
 ## Key Files Reference
 
 - `firmware/config.h` - Pin definitions, thresholds, constants
-- `firmware/REFACTORING_PLAN.md` - Complete v2.0 architecture (1,316 lines)
+|- `docs/architecture.md` - Complete v2.0 architecture spec (consolidated from firmware/REFACTORING_PLAN.md)
 - `extras/FSM_tester/FSM_Tester.py` - FSM validation with real data
 - `extras/FSM_tester/explicacao.md` - FSM detailed explanation (541 lines)
 - `test/FSM/FSM.ino` - Hardware FSM test (322 lines)
@@ -311,10 +311,11 @@ if (data.parachute_deployed &&
   - `documentation-specialist/SKILL.md` - Technical documentation expert
 
 ### Project Documentation
-- `CONTRIBUTING.md` - Contribution guidelines and PR process
-- `firmware/REFACTORING_PLAN.md` - v2.0 architecture specification (1,316 lines)
-- `docs/software.md` - Software architecture overview
-- `docs/hardware.md` - Hardware specifications
+|- `CONTRIBUTING.md` - Contribution guidelines and PR process
+|- `docs/architecture.md` - v2.0 architecture specification (consolidated from REFACTORING_PLAN.md)
+|- `docs/modules.md` - Module reference (moved from firmware/MODULOS.md)
+|- `docs/software.md` - Software architecture overview
+|- `docs/hardware.md` - Hardware specifications
 
 ---
 

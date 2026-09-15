@@ -4,8 +4,10 @@
 
 The Flight Computer v2.0 firmware runs on an **ESP32-S3** (the v2.0 target
 platform; the earlier ESP32-C3 SuperMini was used for the prototype/dev
-firmware). It uses a FreeRTOS multi-task architecture, managing sensors,
-communication and parachute control during flight.
+firmware and is still used for the emergency backup board — see
+[`extras/emergency/`](../extras/emergency)). It uses a FreeRTOS multi-task
+architecture, managing sensors, communication and parachute control during
+flight.
 
 **Version**: 2.0.0 (all phases complete)
 **Architecture**: FreeRTOS-based OOP (Phases 1-10 complete)
@@ -27,7 +29,7 @@ The v2.0 refactoring introduces:
 ```mermaid
 graph TB
     subgraph "Core 1 - Flight Critical"
-        FC[FlightControlTask<br/>50Hz, Priority 20]
+        FC[FlightControlTask<br/>5 Hz, Priority 20]
         FSM[FlightStateMachine<br/>4 states + 7 sub-events]
         SENS[Sensor Updates<br/>BMP585, LSM6DS3]
         PARA[ParachuteServo<br/>deploy at apogee]
@@ -86,7 +88,7 @@ firmware/
 ├── flight/                     # Flight logic — headers
 │   ├── SensorData.h            # SensorData struct + FlightState enum
 │   ├── FlightStateMachine.h    # FSM (4 states + 7 sub-events)
-│   ├── FlightControlTask.h     # Task 1 — 50 Hz (FSM + deploy + queue)
+│   ├── FlightControlTask.h     # Task 1 — 5 Hz (FSM + deploy + queue)
 │   ├── TelemetryTask.h         # Task 2 — 5 Hz (assemble + LoRa + file)
 │   └── LoggerTask.h            # Task 3 — low priority (log Serial)
 ├── BMP585Sensor.cpp            # sensor impl (root — compiled by Arduino)
@@ -97,8 +99,7 @@ firmware/
 ├── TelemetryTask.cpp
 ├── LoggerTask.cpp
 ├── parachute_module.cpp
-├── REFACTORING_PLAN.md         # v2.0 architecture specification
-├── MODULOS.md                  # Module documentation
+├── docs/architecture.md        # v2.0 architecture (consolidated)
 └── docs -> ../docs             # telemetry-format.md (FSM/format reference)
 ```
 
@@ -106,7 +107,7 @@ firmware/
 
 | Task | Core | Rate | Priority | Responsibility |
 |------|------|------|----------|----------------|
-| `taskFlightControl` | 1 | 50 Hz | 20 | Update sensors + FSM, deploy parachute at apogee, push `SensorData` to `sensorDataQueue`, feed TWDT |
+|| `taskFlightControl` | 1 | 5 Hz | 20 | Update sensors + FSM, deploy parachute at apogee, push `SensorData` to `sensorDataQueue`, feed TWDT |
 | `taskTelemetry` | 0 | 5 Hz | 5 | Drain `sensorDataQueue` (newest sample), enrich with GPS, assemble CSV v2.0, fan-out to Serial + LoRa + storage (SD/LittleFS) |
 | `taskLogger` | 0 | event | 1 | Consume `logQueue`, print to Serial (level filter) |
 
@@ -117,7 +118,7 @@ Queues (defined in `config.h`):
 
 ## Flight State Machine
 
-See `firmware/REFACTORING_PLAN.md` Phase 6 for the full specification.
+See [`docs/architecture.md`](architecture.md) Phase 6 for the full specification.
 
 - **Outer states**: `IDLE → ASCENT → DESCENT → LANDED` (enum `FlightState`).
 - **Sub-event flags** (diagnostic, set once): `liftoff`, `burnout`, `apogee`,

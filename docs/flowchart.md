@@ -4,7 +4,7 @@ FreeRTOS multi-task architecture with 4-state FSM.
 
 ```mermaid
 graph TB
-    subgraph "Core 1 — FlightControl Task (50Hz, Priority 20)"
+    subgraph "Core 1 — FlightControl Task (5 Hz, Priority 20)"
         FC_START([Start Cycle]) --> FC_SENSORS[Update BMP585 + LSM6DS3]
         FC_SENSORS --> FC_FSM[Run FlightStateMachine.update]
         FC_FSM --> FC_ACTUATE{Parachute<br>deployed?}
@@ -67,8 +67,8 @@ graph TB
 
 | Parameter | Value |
 |-----------|-------|
-| FlightControl period | 20 ms (50 Hz) |
-| Telemetry period | 200 ms (5 Hz) |
+| FlightControl period | 200 ms (5 Hz) |
+|| Telemetry period | 200 ms (5 Hz) |
 | Parachute confirm cycles | 3 consecutive |
 | Parachute ground guard | 50 m AGL |
 | Sensor data queue | 25 slots |
@@ -78,6 +78,6 @@ graph TB
 
 1. FSM detects apogee: `|vz| < 1 m/s AND az < -0.1 m/s²`
 2. FSM transitions to `DESCENT`
-3. `detectParachute` waits for `vz < -2 m/s` for 3 consecutive cycles
+3. `detectParachute` waits for `vz < -2 m/s` for 3 consecutive cycles (600 ms @5Hz)
 4. FlightControlTask actuates servo via `deployParachute()`
 5. One-shot: `g_parachuteActuated` flag prevents re-actuation

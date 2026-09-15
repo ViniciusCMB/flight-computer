@@ -28,17 +28,16 @@ firmware/
 ├── sensors/              # ISensor implementations (BMP585, LSM6DS3, GPS)
 ├── flight/               # FreeRTOS tasks + FlightStateMachine
 ├── modules/              # Actuators/peripherals (servo, LoRa, buzzer, FS)
-├── MODULOS.md            # Module reference
-└── REFACTORING_PLAN.md   # v2.0 architecture specification
+└── docs/architecture.md  # v2.0 architecture (consolidated from REFACTORING_PLAN.md)
 ```
 
 Two FreeRTOS cores with queue-based communication:
 
-| Core | Task | Priority | Rate | Responsibility |
-|------|------|----------|------|----------------|
-| **1** | `FlightControlTask` | 20 | 50 Hz | Sensors + FSM + parachute + watchdog |
-| **0** | `TelemetryTask` | 5 | 5 Hz | GPS enrichment + LoRa + file + Serial |
-| **0** | `LoggerTask` | 1 | — | Async log queue with level filter |
+| Core  | Task                | Priority | Rate  | Responsibility                        |
+| ----- | ------------------- | -------- | ----- | ------------------------------------- |
+| **1** | `FlightControlTask` | 20       | 5 Hz  | Sensors + FSM + parachute + watchdog  |
+| **0** | `TelemetryTask`     | 5        | 5 Hz  | GPS enrichment + LoRa + file + Serial |
+| **0** | `LoggerTask`        | 1        | —     | Async log queue with level filter     |
 
 ## Quick Start
 
@@ -59,23 +58,25 @@ python3 extras/validate_telemetry_format.py    # 22-field telemetry alignment
 
 ## Key Specifications
 
-| Parameter | Value |
-|-----------|-------|
-| FlightControl rate | 50 Hz (20 ms) |
-| Telemetry rate | 5 Hz (200 ms) |
-| Parachute confirm | 3 consecutive Vz < −2 m/s |
-| Ground guard | 50 m AGL |
-| LoRa frequency | 915 MHz (Brazil/Americas ISM) |
-| LoRa config | SF7, BW 125 kHz, CR 4/5, CRC on, +17 dBm |
-| Storage | SD card (SPI) → LittleFS fallback |
-| Sensor queue | 25 slots (∼2.4 KB) |
-| Log queue | 50 slots (∼7.2 KB) |
+| Parameter          | Value                                    |
+| ------------------ | ---------------------------------------- |
+| FlightControl rate | 5 Hz (200 ms)                            |
+| Telemetry rate     | 5 Hz (200 ms)                            |
+| Parachute confirm  | 3 consecutive Vz < −2 m/s                |
+| Ground guard       | 50 m AGL                                 |
+| LoRa frequency     | 915 MHz (Brazil/Americas ISM)            |
+| LoRa config        | SF7, BW 125 kHz, CR 4/5, CRC on, +17 dBm |
+| Storage            | SD card (SPI) → LittleFS fallback        |
+| Sensor queue       | 25 slots (∼2.4 KB)                       |
+| Log queue          | 50 slots (∼7.2 KB)                       |
 
 ## Documentation
 
 - [`docs/software.md`](docs/software.md) — Software architecture
-- [`docs/hardware.md`](docs/hardware.md) — Hardware specs, pinout, BOM
-- [`docs/flowchart.md`](docs/flowchart.md) — FreeRTOS + FSM flow diagram
+|- [`docs/hardware.md`](docs/hardware.md) — Hardware specs, pinout, BOM
+|- [`docs/architecture.md`](docs/architecture.md) — Architecture spec (consolidated)
+|- [`docs/modules.md`](docs/modules.md) — Module reference
+|- [`docs/flowchart.md`](docs/flowchart.md) — FreeRTOS + FSM flow diagram
 - [`AGENTS.md`](AGENTS.md) — AI agent coding guide
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — How to contribute
 
@@ -86,7 +87,7 @@ firmware/   v2.0 firmware (OOP + FreeRTOS + FSM)
 test/       Hardware validation sketches (sensors, servo, FSM)
 docs/       software.md, hardware.md, telemetry-format.md, flowchart.md
 hardware/   KiCad schematic + PCB + BOM
-extras/     Scripts, FSM tester, format validator
+extras/     Scripts, FSM tester, format validator, emergency deploy
 ```
 
 ## Status
@@ -96,8 +97,8 @@ documented. See [`CHANGELOG.md`](CHANGELOG.md) for the full release history.
 
 ## Team
 
-Serra Rocketry — #11 Dedalo - LASC 2026
+Serra Rocketry — IPRJ/UERJ
 
 ## License
 
-Serra Rocketry. Contributions under the project license — see `CONTRIBUTING.md`.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
